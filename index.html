@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clasificación de Automóviles</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script> <!-- Cargar TensorFlow.js -->
+</head>
+<body>
+
+    <h1>Clasificación de Automóviles</h1>
+
+    <button onclick="loadImage()">Cargar Imagen</button>
+    <button onclick="startCamera()">Iniciar Cámara</button>
+    <button onclick="stopCamera()">Detener Cámara</button>
+
+    <video id="video" autoplay muted style="display:none;"></video>
+    <img id="image" src="" alt="Imagen cargada" style="display:none;">
+    <p id="result">Resultado: Ninguno</p>
+
+    <script>
+        let video = document.getElementById("video");
+        let image = document.getElementById("image");
+        let result = document.getElementById("result");
+        let stream = null;
+
+        let model; 
+
+        const clases = [
+            'Convertible', 'Coupe', 'Electric', 'Sedan',
+            'Sport', 'SUV', 'Truck', 'Van', 'Wagon'
+        ];
+
+        // Cargar el modelo previamente entrenado en el navegador
+        async function loadModel() {
+            model = await tf.loadLayersModel('./clasificacion/model.json');
+            console.log("Modelo cargado correctamente");
+        }
+
+        // Preprocesar la imagen antes de la predicción
+        function preprocesarImagen(image) {
+            const tensor = tf.browser.fromPixels(image)
+                .resizeNearestNeighbor([150, 150])  // Cambiar tamaño a 150x150
+                .toFloat()
+                .div(tf.scalar(255))  // Normalizar entre 0 y 1
+                .expandDims();
+            return tensor;
+        }
+
+        // Cargar imagen desde el ordenador
+        function loadImage() {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*";
+            input.onchange = (event) => {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+                reader.onload = () => {
+                    image.src = reader.result;
+                    image.style.display = "block";
+                    video.style.display = "none";
+
+                    // Realizar la predicción
+                    predict(image);
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        }
+
+        // Iniciar la cámara
+        function startCamera() {
+            if (stream) {
+                stopCamera();
+            }
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((mediaStream) => {
+                    stream = mediaStream;
+                    video.srcObject = mediaStream;
+                    video.style.display = "block";
+                    image.style.display = "none";
+
+                    // Procesar video en tiempo real
+                    processVideo();
+                })
+                .catch((error) => {
+                    console.error("Error al acceder a la cámara:", error);
+                });
+        }
+
+        // Detener la cámara
+        function stopCamera() {
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                stream = null;
+            }
+            video.style.display = "none";
+        }
+
+        // Procesar video en tiempo real
+        function processVideo() {
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+
+            // Capturar frame y procesar para predicción
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL("image/jpeg");
+            const imgElement = new Image();
+            imgElement.src = imageData;
+
+            imgElement.onload = () => {
+                // Preprocesar la imagen y hacer predicción
+                predict(imgElement);
+            };
+
+            // Llamar repetidamente para hacer predicciones
+            requestAnimationFrame(processVideo);
+        }
+
+        // Realizar la predicción sobre la imagen
+        async function predict(image) {
+            if (!model) {
+                console.log("Modelo no cargado.");
+                return;
+            }
+
+            const tensor = preprocesarImagen(image);
+            const prediction = await model.predict(tensor).data();
+            const predictedClass = clases[prediction.indexOf(Math.max(...prediction))];
+            
+            result.textContent = `Resultado: ${predictedClass}`;
+        }
+
+        // Cargar el modelo cuando la página se carga
+        loadModel();
+    </script>
+
+</body>
+</html>
